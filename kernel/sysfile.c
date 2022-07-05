@@ -291,6 +291,7 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
+  int derederence_count = MAXDEREFERENCE;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -309,7 +310,16 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+
+    if(!(O_IGNORE_SYMLINK & omode)){
+      if((ip = dereference_link(ip, &derederence_count)) == 0){
+        end_op();
+        panic("failed to dereference link on open\n");
+      }
+    }
+    
+ 
+    if(ip->type == T_DIR && !((omode == O_RDONLY) | (omode == O_IGNORE_SYMLINK))){
       iunlockput(ip);
       end_op();
       return -1;
@@ -393,11 +403,16 @@ sys_chdir(void)
   char path[MAXPATH];
   struct inode *ip;
   struct proc *p = myproc();
+  int derederence_count = MAXDEREFERENCE;
   
   begin_op();
   if(argstr(0, path, MAXPATH) < 0 || (ip = namei(path)) == 0){
     end_op();
     return -1;
+  }
+  if((ip = dereference_link(ip, &derederence_count)) == 0){
+      end_op();
+      panic("failed\n");
   }
   ilock(ip);
   if(ip->type != T_DIR){
@@ -483,4 +498,34 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+
 }
+
+uint64
+sys_readlink(void)
+{
+  char pathName[MAXPATH];
+  uint64 buff;
+  int bufSize;
+  if((argstr(0, pathName, MAXPATH)) < 0 || argaddr(1, &buff) < 0 || argint(2, &bufSize) < 0)
+    return -1;
+
+  return read_link(pathName, (char*)buff, bufSize);
+}
+
+uint64
+sys_symlink(void)
+{
+  char oldPath[MAXPATH];
+  char newPath[MAXPATH];
+  int oldLength;
+
+  
+  if((oldLength = argstr(0, oldPath, MAXPATH)) < 0 || argstr(1, newPath, MAXPATH) < 0)
+    return -1;
+
+  return sym_link(oldPath, newPath);
+}
+
+
+
