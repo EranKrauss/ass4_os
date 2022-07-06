@@ -20,6 +20,7 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
+  int dereference_count = MAXDEREFERENCE;
 
   begin_op();
 
@@ -28,6 +29,11 @@ exec(char *path, char **argv)
     return -1;
   }
   ilock(ip);
+
+  if((ip = dereference_link(ip, &dereference_count)) == 0){ 
+      end_op();
+      panic("failed\n");
+   }
 
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
