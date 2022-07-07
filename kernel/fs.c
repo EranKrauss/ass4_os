@@ -401,6 +401,29 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  bn -= NINDIRECT;
+
+  if(bn < DINDIRECT){
+    int curr = bn / NINDIRECT;
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if ((addr = a[curr]) == 0){
+      a[curr] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    curr = bn % NINDIRECT;
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if((addr = a[curr]) == 0){
+      a[curr] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
   panic("bmap: out of range");
 }
 
@@ -430,6 +453,29 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+  
+   if(ip->addrs[NDIRECT + 1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+    struct buf *bp_inside;
+    uint* b;
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i]){
+        bp_inside = bread(ip->dev, a[i]);
+        b = (uint*)bp_inside->data;
+        for(j = 0; j < NINDIRECT; j++){
+          if(b[j])
+            bfree(ip->dev, b[j]);
+        }
+        brelse(bp_inside);
+        bfree(ip->dev, a[i]);
+      }
+    }
+    
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT + 1]);
+    ip->addrs[NDIRECT + 1] = 0;
   }
 
   ip->size = 0;
@@ -626,7 +672,7 @@ skipelem(char *path, char *name)
 // path element into name, which must have room for DIRSIZ bytes.
 // Must be called inside a transaction since it calls iput().
 static struct inode*
-namex(char *path, int nameiparent, char *name)
+namex(char *path, int nameiparent, char *name, int refNum)
 {
   struct inode *ip, *next;
 
@@ -637,6 +683,9 @@ namex(char *path, int nameiparent, char *name)
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
+    if((ip = dereference_link(ip, &refNum)) == 0){
+        return 0;
+    }
     if(ip->type != T_DIR){
       iunlockput(ip);
       return 0;
@@ -664,11 +713,142 @@ struct inode*
 namei(char *path)
 {
   char name[DIRSIZ];
-  return namex(path, 0, name);
+  return namex(path, 0, name, MAXDEREFERENCE);
 }
 
 struct inode*
 nameiparent(char *path, char *name)
 {
-  return namex(path, 1, name);
+  return namex(path, 1, name, MAXDEREFERENCE);
 }
+
+
+int
+read_link(const char* pathName, char* buff, int bufSize){
+  struct inode *ip;
+  begin_op();
+
+  if((ip = namei((char*)pathName)) == 0){
+    end_op();
+    return -1;
+  }
+
+  ilock(ip);
+
+  if(ip->type != T_SYMBOLIC){
+    panic("read_link");  
+    iunlock(ip);  
+    end_op();
+    return -1;
+  }
+
+  if(readi(ip, 1, (uint64)buff, 0, bufSize) > bufSize){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
+static struct inode*
+create(char *path, short type, short major, short minor)
+{
+  struct inode *ip, *dp;
+  char name[DIRSIZ];
+
+  if((dp = nameiparent(path, name)) == 0)
+    return 0;
+
+  ilock(dp);
+
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    iunlockput(dp);
+    ilock(ip);
+    if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
+      return ip;
+    iunlockput(ip);
+    return 0;
+  }
+
+  if((ip = ialloc(dp->dev, type)) == 0)
+    panic("create\n");
+
+  ilock(ip);
+  ip->major = major;
+  ip->minor = minor;
+  ip->nlink = 1;
+  iupdate(ip);
+
+
+  if(type == T_DIR){ 
+    dp->nlink++;  
+    iupdate(dp);
+    if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
+      panic("create\n");
+  }
+
+  if(dirlink(dp, name, ip->inum) < 0)
+    panic("create\n");
+
+  iunlockput(dp);
+
+  return ip;
+}
+
+
+struct inode*
+dereference_link(struct inode* ip, int* refNum)
+{
+  char buff[MAXPATH];
+  char name[DIRSIZ];
+  while(ip->type == T_SYMBOLIC){
+    *refNum = *refNum-1;
+    if(*refNum == 0){
+      iunlock(ip);
+      return 0;
+    }
+
+    if (readi(ip, 0, (uint64)buff, 0, MAXPATH) > MAXPATH){
+      return 0;
+      iunlock(ip);
+    }
+    iunlockput(ip);
+    ip = namex(buff, 0, name, *refNum);
+    ilock(ip);
+  }
+  return ip;
+}
+
+
+
+int
+sym_link(const char* oldpath, const char* newpath){
+  struct inode *ip;
+  int old_length = strlen(oldpath)+1;
+
+  begin_op();
+
+  ip = create((char*)newpath, T_SYMBOLIC, 0, 0);
+  if(ip == 0){ 
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip, 0, (uint64)oldpath, 0, old_length) != old_length){
+    end_op();
+    return -1;
+  }
+
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
+  return 0;
+}
+
+
+
+
