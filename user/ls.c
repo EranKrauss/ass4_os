@@ -2,12 +2,20 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 #include "kernel/fs.h"
+#include "kernel/param.h"
+#include "kernel/fcntl.h"
 
 char*
-fmtname(char *path)
+fmtname(char *path, int isLinkSymbolic)
 {
   static char buf[DIRSIZ+1];
   char *p;
+   char symName[MAXPATH];
+  char* arrow = " -> ";
+
+  if(isLinkSymbolic){
+    readlink((const char*) path, symName, MAXPATH);
+  }
 
   // Find first character after last slash.
   for(p=path+strlen(path); p >= path && *p != '/'; p--)
@@ -17,6 +25,10 @@ fmtname(char *path)
   // Return blank-padded name.
   if(strlen(p) >= DIRSIZ)
     return p;
+  if(isLinkSymbolic){
+    memmove(p+strlen(p), arrow, strlen(arrow));
+    memmove(p+strlen(p), symName, strlen(symName));
+  }
   memmove(buf, p, strlen(p));
   memset(buf+strlen(p), ' ', DIRSIZ-strlen(p));
   return buf;
@@ -29,8 +41,9 @@ ls(char *path)
   int fd;
   struct dirent de;
   struct stat st;
+  char buff[MAXPATH];
 
-  if((fd = open(path, 0)) < 0){
+  if((fd = open(path, O_IGNORE_SYMLINK)) < 0){
     fprintf(2, "ls: cannot open %s\n", path);
     return;
   }
@@ -43,7 +56,7 @@ ls(char *path)
 
   switch(st.type){
   case T_FILE:
-    printf("%s %d %d %l\n", fmtname(path), st.type, st.ino, st.size);
+    printf("%s %d %d %l\n", fmtname(path, 0), st.type, st.ino, st.size);
     break;
 
   case T_DIR:
