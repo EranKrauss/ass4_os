@@ -312,7 +312,7 @@ sys_open(void)
     ilock(ip);
 
     if(!(O_IGNORE_SYMLINK & omode)){
-      if((ip = dereference_link(ip, &derederence_count)) == 0){
+      if((ip = dereferenceLink(ip, &derederence_count)) == 0){
         end_op();
         panic("failed to dereference link on open\n");
       }
@@ -410,7 +410,7 @@ sys_chdir(void)
     end_op();
     return -1;
   }
-  if((ip = dereference_link(ip, &derederence_count)) == 0){
+  if((ip = dereferenceLink(ip, &derederence_count)) == 0){
       end_op();
       panic("failed\n");
   }
@@ -505,12 +505,12 @@ uint64
 sys_readlink(void)
 {
   char pathName[MAXPATH];
-  uint64 buff;
-  int bufSize;
-  if((argstr(0, pathName, MAXPATH)) < 0 || argaddr(1, &buff) < 0 || argint(2, &bufSize) < 0)
+  uint64 buffer;
+  int bufferSize;
+  if((argstr(0, pathName, MAXPATH)) < 0 || argaddr(1, &buffer) < 0 || argint(2, &bufferSize) < 0)
     return -1;
 
-  return read_link(pathName, (char*)buff, bufSize);
+  return readLink(pathName, (char*)buffer, bufferSize);
 }
 
 uint64
@@ -524,7 +524,7 @@ sys_symlink(void)
   if((oldLength = argstr(0, oldPath, MAXPATH)) < 0 || argstr(1, newPath, MAXPATH) < 0)
     return -1;
 
-  return sym_link(oldPath, newPath);
+  return symLink(oldPath, newPath);
 }
 
 

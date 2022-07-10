@@ -683,7 +683,7 @@ namex(char *path, int nameiparent, char *name, int refNum)
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
-    if((ip = dereference_link(ip, &refNum)) == 0){
+    if((ip = dereferenceLink(ip, &refNum)) == 0){
         return 0;
     }
     if(ip->type != T_DIR){
@@ -724,7 +724,7 @@ nameiparent(char *path, char *name)
 
 
 int
-read_link(const char* pathName, char* buff, int bufSize){
+readLink(const char* pathName, char* buff, int bufSize){
   struct inode *ip;
   begin_op();
 
@@ -736,7 +736,7 @@ read_link(const char* pathName, char* buff, int bufSize){
   ilock(ip);
 
   if(ip->type != T_SYMBOLIC){
-    panic("read_link");  
+    panic("readLink");  
     iunlock(ip);  
     end_op();
     return -1;
@@ -756,15 +756,16 @@ read_link(const char* pathName, char* buff, int bufSize){
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
-  struct inode *ip, *dp;
-  char name[DIRSIZ];
+  struct inode *ip;
+  struct inode *dp;
+  char names[DIRSIZ];
 
-  if((dp = nameiparent(path, name)) == 0)
+  if((dp = nameiparent(path, names)) == 0)
     return 0;
 
   ilock(dp);
 
-  if((ip = dirlookup(dp, name, 0)) != 0){
+  if((ip = dirlookup(dp, names, 0)) != 0){
     iunlockput(dp);
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
@@ -773,8 +774,9 @@ create(char *path, short type, short major, short minor)
     return 0;
   }
 
-  if((ip = ialloc(dp->dev, type)) == 0)
+  if((ip = ialloc(dp->dev, type)) == 0){
     panic("create\n");
+  }
 
   ilock(ip);
   ip->major = major;
@@ -790,7 +792,7 @@ create(char *path, short type, short major, short minor)
       panic("create\n");
   }
 
-  if(dirlink(dp, name, ip->inum) < 0)
+  if(dirlink(dp, names, ip->inum) < 0)
     panic("create\n");
 
   iunlockput(dp);
@@ -800,7 +802,7 @@ create(char *path, short type, short major, short minor)
 
 
 struct inode*
-dereference_link(struct inode* ip, int* refNum)
+dereferenceLink(struct inode* ip, int* refNum)
 {
   char buff[MAXPATH];
   char name[DIRSIZ];
@@ -825,7 +827,7 @@ dereference_link(struct inode* ip, int* refNum)
 
 
 int
-sym_link(const char* oldpath, const char* newpath){
+symLink(const char* oldpath, const char* newpath){
   struct inode *ip;
   int old_length = strlen(oldpath)+1;
 

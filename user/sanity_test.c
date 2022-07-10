@@ -5,16 +5,16 @@
 
 void
 write_blocks(int fd, int num_of_blocks, char* buf){
-    int written;
+    int isWritten;
     int i;
-    int printcount = 0;
-    for(i = 0; i < num_of_blocks; i++, printcount++){
-    written = write(fd, buf, sizeof(buf));
-    if(printcount == 255){
+    int num_of_print = 0;
+    for(i = 0; i < num_of_blocks; i++, num_of_print++){
+    isWritten = write(fd, buf, sizeof(buf));
+    if(num_of_print == 255){
       printf("iteration %d completed\n", i);
-      printcount = 0;
+      num_of_print = 0;
     }
-    if(written < 0){
+    if(isWritten < 0){
         printf("failed writing direct block number %d\n", i);
         exit(1);
     }
@@ -27,7 +27,7 @@ main(int argc, char *argv[])
 {
   int fd;
   char buf[1024];
-  char* name = "sanity_check.txt";
+  char* name = "sanity_test.txt";
   int i;
   for(i=0; i<1024; i++){
       buf[i] = '0';
@@ -38,11 +38,11 @@ main(int argc, char *argv[])
       exit(1);
   }
   write_blocks(fd, 12, buf);
-  printf("finished writing 12KB (direct)\n");
+  printf("Finished writing 12KB (direct)\n");
   write_blocks(fd, 256, buf);
-  printf("finished writing 268KB (single indirect)\n");
+  printf("Finished writing 268KB (single indirect)\n");
   write_blocks(fd, 256*256, buf);
-  printf("finished writing 10MB (double indirect)\n");
+  printf("Finished writing 10MB (double indirect)\n");
   unlink(name);
   close(fd);
   exit(0);

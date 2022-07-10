@@ -30,7 +30,7 @@ exec(char *path, char **argv)
   }
   ilock(ip);
 
-  if((ip = dereference_link(ip, &dereference_count)) == 0){ 
+  if((ip = dereferenceLink(ip, &dereference_count)) == 0){ 
       end_op();
       panic("failed\n");
    }
